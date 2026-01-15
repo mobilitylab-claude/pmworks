@@ -37,3 +37,4 @@ node_modules_backup_*
 *.db
 *.xlsx
 .DS_Store
+요구사항.txt

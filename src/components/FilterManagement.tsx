@@ -16,10 +16,17 @@ import {
     Calendar,
     Terminal,
     ChevronRight,
-    SearchX
+    SearchX,
+    ExternalLink
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 
 interface FilterManagementProps {
     initialFilters: Filter[];
@@ -29,6 +36,7 @@ export function FilterManagement({ initialFilters }: FilterManagementProps) {
     const [search, setSearch] = useState("");
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editTitle, setEditTitle] = useState("");
+    const [selectedFilter, setSelectedFilter] = useState<Filter | null>(null);
     const router = useRouter();
 
     const filtered = initialFilters.filter(f =>
@@ -118,7 +126,12 @@ export function FilterManagement({ initialFilters }: FilterManagementProps) {
                                         ) : (
                                             <div className="flex flex-col">
                                                 <div className="flex items-center gap-2 mb-1">
-                                                    <h3 className="font-semibold text-slate-200 truncate">{filter.title}</h3>
+                                                    <h3
+                                                        className="font-semibold text-slate-200 truncate cursor-pointer hover:text-blue-400 transition-colors"
+                                                        onClick={() => setSelectedFilter(filter)}
+                                                    >
+                                                        {filter.title}
+                                                    </h3>
                                                     <Button
                                                         size="icon"
                                                         variant="ghost"
@@ -132,7 +145,10 @@ export function FilterManagement({ initialFilters }: FilterManagementProps) {
                                                     </Button>
                                                 </div>
                                                 <div className="flex items-center gap-4 text-[11px] text-slate-500">
-                                                    <span className="flex items-center gap-1 font-mono text-blue-400/70 truncate max-w-[400px]">
+                                                    <span
+                                                        className="flex items-center gap-1 font-mono text-blue-400/70 truncate max-w-[400px] cursor-pointer hover:text-blue-300"
+                                                        onClick={() => setSelectedFilter(filter)}
+                                                    >
                                                         {filter.jql_query}
                                                     </span>
                                                     <span className="flex items-center gap-1 shrink-0 ml-auto opacity-60">
@@ -145,6 +161,15 @@ export function FilterManagement({ initialFilters }: FilterManagementProps) {
                                     </div>
 
                                     <div className="flex items-center gap-2 shrink-0">
+                                        <Button
+                                            size="icon"
+                                            variant="ghost"
+                                            className="h-10 w-10 text-slate-500 hover:text-blue-400 hover:bg-blue-400/10 rounded-xl"
+                                            title="빌더에서 열기"
+                                            onClick={() => router.push(`/builder?loadId=${filter.id}`)}
+                                        >
+                                            <ExternalLink className="w-5 h-5" />
+                                        </Button>
                                         <Button
                                             size="icon"
                                             variant="ghost"
@@ -163,6 +188,38 @@ export function FilterManagement({ initialFilters }: FilterManagementProps) {
                     ))
                 )}
             </div>
+
+            <Dialog open={!!selectedFilter} onOpenChange={(open) => !open && setSelectedFilter(null)}>
+                <DialogContent className="bg-slate-900 border-slate-800 text-slate-100 max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-blue-400">
+                            <Terminal className="w-5 h-5" />
+                            {selectedFilter?.title}
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 pt-4">
+                        <div className="space-y-2">
+                            <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">JQL Query</h4>
+                            <div className="bg-black/40 border border-slate-800 rounded-lg p-4 font-mono text-sm text-blue-300 break-all whitespace-pre-wrap">
+                                {selectedFilter?.jql_query}
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Configuration (JSON)</h4>
+                            <div className="bg-black/40 border border-slate-800 rounded-lg p-4 font-mono text-xs text-slate-400 overflow-x-auto">
+                                <pre>{selectedFilter ? JSON.stringify(JSON.parse(selectedFilter.config_json), null, 2) : ""}</pre>
+                            </div>
+                        </div>
+                        <div className="flex justify-between items-center text-[11px] text-slate-500 pt-2 border-t border-slate-800/50">
+                            <span>ID: {selectedFilter?.id}</span>
+                            <span className="flex items-center gap-1">
+                                <Calendar className="w-3 h-3" />
+                                생성일: {selectedFilter?.created_at ? format(new Date(selectedFilter.created_at), "yyyy-MM-dd HH:mm:ss") : "-"}
+                            </span>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

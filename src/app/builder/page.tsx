@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { JQLBuilder } from "@/components/JQLBuilder";
 import { getUsers } from "@/lib/actions-user";
 import { getFilters } from "@/lib/actions-filter";
@@ -19,7 +20,9 @@ export default async function BuilderPage() {
             </div>
 
             <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <JQLBuilder users={users} savedFilters={filters} />
+                <Suspense fallback={<div className="h-96 flex items-center justify-center text-slate-500">필터 빌더 로딩 중...</div>}>
+                    <JQLBuilder users={users} savedFilters={filters} />
+                </Suspense>
             </section>
         </main>
     );

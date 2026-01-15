@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { User } from "@/lib/actions-user";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,7 +29,8 @@ import {
     ChevronDown,
     Users,
     Settings,
-    Edit3
+    Edit3,
+    CopyPlus
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -55,7 +56,7 @@ import {
     CollectionStatus,
     CollectionLog
 } from "@/lib/actions-status";
-import { Progress } from "@/components/ui/progress";
+import { Progress } from "@/components/ui/Progress";
 
 // 로컬에서 렌더링 최적화를 위해 사용하는 확장 타입
 interface ExtendedCondition extends Condition {
@@ -119,6 +120,20 @@ export function JQLBuilder({ users, savedFilters }: JQLBuilderProps) {
     const [logs, setLogs] = useState<CollectionLog[]>([]);
     const [isMonitorOpen, setIsMonitorOpen] = useState(false);
     const router = useRouter();
+    const searchParams = useSearchParams();
+
+    // URL 파라미터를 통해 필터를 자동으로 로드합니다.
+    useEffect(() => {
+        const loadId = searchParams.get('loadId');
+        if (loadId && savedFilters.length > 0) {
+            const filterToLoad = savedFilters.find(f => f.id?.toString() === loadId);
+            if (filterToLoad) {
+                loadFilter(filterToLoad);
+                // 파라미터 처리 후 중복 로딩 방지를 위해 URL 정리 (선택 사항)
+                // window.history.replaceState({}, '', '/builder');
+            }
+        }
+    }, [searchParams, savedFilters]);
 
     const loadFilter = (filter: Filter) => {
         setTitle(filter.title);
@@ -272,7 +287,33 @@ export function JQLBuilder({ users, savedFilters }: JQLBuilderProps) {
     };
 
     const handleSave = async () => {
-        const filterName = prompt("저장할 필터의 이름을 입력하세요:", title);
+        let filterName = title;
+
+        // "새 필터" 이거나 기존 필터 목록에 없는 경우 이름을 묻습니다.
+        if (title === "새 필터") {
+            const promptedName = prompt("저장할 필터의 이름을 입력하세요:", "");
+            if (!promptedName) return;
+            filterName = promptedName;
+        } else {
+            if (!confirm(`'${title}' 필터의 변경사항을 저장하시겠습니까?`)) return;
+        }
+
+        const existingFilter = savedFilters.find(f => f.title === filterName);
+
+        const filter: Filter = {
+            id: existingFilter?.id,
+            title: filterName,
+            jql_query: generatedJQL,
+            config_json: JSON.stringify({ conditions })
+        };
+        await saveFilter(filter);
+        alert("필터가 저장되었습니다.");
+        setTitle(filterName);
+        router.refresh();
+    };
+
+    const handleSaveAs = async () => {
+        const filterName = prompt("다른 이름으로 저장할 필터의 이름을 입력하세요:", title + "_복사");
         if (!filterName) return;
 
         if (savedFilters.some(f => f.title === filterName)) {
@@ -286,7 +327,7 @@ export function JQLBuilder({ users, savedFilters }: JQLBuilderProps) {
             config_json: JSON.stringify({ conditions })
         };
         await saveFilter(filter);
-        alert("필터가 저장되었습니다.");
+        alert("새 필터로 저장되었습니다.");
         setTitle(filterName);
         router.refresh();
     };
@@ -409,9 +450,16 @@ export function JQLBuilder({ users, savedFilters }: JQLBuilderProps) {
                     <div className="flex flex-col gap-1">
                         <CardTitle className="text-xl font-bold text-slate-100 flex items-center gap-2">
                             <Terminal className="w-5 h-5 text-blue-400" />
-                            JQL 필터 빌더
+                            {title === "새 필터" ? "JQL 필터 빌더" : title}
                         </CardTitle>
-                        <p className="text-[10px] text-slate-500 font-sans px-7">복잡한 Jira 쿼리를 직관적으로 구성하세요.</p>
+                        {title !== "새 필터" ? (
+                            <div className="flex items-center gap-2 px-7">
+                                <span className="text-[10px] bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/20">활성 필터</span>
+                                <span className="text-xs text-slate-400 font-medium">{title}</span>
+                            </div>
+                        ) : (
+                            <p className="text-[10px] text-slate-500 font-sans px-7">복잡한 Jira 쿼리를 직관적으로 구성하세요.</p>
+                        )}
                     </div>
                     <div className="flex gap-2">
                         <Dialog open={isLoadOpen} onOpenChange={setIsLoadOpen}>
@@ -459,39 +507,14 @@ export function JQLBuilder({ users, savedFilters }: JQLBuilderProps) {
                             </DialogContent>
                         </Dialog>
 
-                        <Button variant="outline" size="sm" onClick={() => router.push("/filters")} className="border-slate-700 bg-slate-800/50 hover:bg-slate-800 text-slate-300">
-                            <Settings className="w-4 h-4 mr-2 text-slate-400" /> 필터 관리
-                        </Button>
-
-                        <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
-                            <DialogTrigger asChild>
-                                <Button variant="outline" size="sm" className="border-slate-700 bg-slate-800/50 hover:bg-slate-800 text-slate-300">
-                                    <Import className="w-4 h-4 mr-2 text-blue-400" /> JQL 임포트
-                                </Button>
-                            </DialogTrigger>
-                            <DialogContent className="bg-slate-900 border-slate-800 text-slate-100">
-                                <DialogHeader>
-                                    <DialogTitle>완성된 JQL 입력</DialogTitle>
-                                </DialogHeader>
-                                <div className="space-y-4 pt-4">
-                                    <textarea
-                                        className="w-full h-32 bg-slate-800 border-slate-700 rounded-lg p-3 text-xs font-mono text-blue-300 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                        placeholder="이곳에 JQL 쿼리를 붙여넣으세요..."
-                                        value={importText}
-                                        onChange={(e) => setImportText(e.target.value)}
-                                    />
-                                    <Button className="w-full bg-blue-600 hover:bg-blue-500" onClick={handleImportJQL}>
-                                        빌더에 적용하기
-                                    </Button>
-                                </div>
-                            </DialogContent>
-                        </Dialog>
-
                         <Button variant="outline" size="sm" onClick={handleSave} className="border-slate-700 hover:bg-slate-800 text-slate-300">
-                            <Save className="w-4 h-4 mr-2" /> 저장
+                            <Save className="w-4 h-4 mr-1.5" /> 저장
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={handleSaveAs} className="border-slate-700 hover:bg-slate-800 text-slate-300">
+                            <CopyPlus className="w-4 h-4 mr-1.5" /> 다른 이름으로 저장
                         </Button>
                         <Button size="sm" onClick={handleExecute} className="bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-900/30">
-                            <Play className="w-4 h-4 mr-2" /> 수집 시작
+                            <Play className="w-4 h-4 mr-1.5" /> 수집 시작
                         </Button>
                         {collectionStatus?.status === "RUNNING" && (
                             <Button size="sm" variant="ghost" className="animate-pulse text-blue-400 hover:text-blue-300" onClick={() => setIsMonitorOpen(true)}>
