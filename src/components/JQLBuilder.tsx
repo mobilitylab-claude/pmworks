@@ -107,7 +107,7 @@ interface JQLBuilderProps {
 export function JQLBuilder({ users, savedFilters }: JQLBuilderProps) {
     const [title, setTitle] = useState("새 필터");
     const [conditions, setConditions] = useState<ExtendedCondition[]>([
-        { id: Math.random().toString(), field: "worklogAuthor", operator: "in", value: [], logic: "AND" }
+        { id: "initial-condition", field: "worklogAuthor", operator: "in", value: [], logic: "AND" }
     ]);
     const [generatedJQL, setGeneratedJQL] = useState("");
     const [isLoadOpen, setIsLoadOpen] = useState(false);
@@ -119,8 +119,20 @@ export function JQLBuilder({ users, savedFilters }: JQLBuilderProps) {
     const [collectionStatus, setCollectionStatus] = useState<CollectionStatus | null>(null);
     const [logs, setLogs] = useState<CollectionLog[]>([]);
     const [isMonitorOpen, setIsMonitorOpen] = useState(false);
+    const [mounted, setMounted] = useState(false);
+
+    // 저장/복사 저장을 위한 커스텀 다이얼로그 상태
+    const [isSaveNameOpen, setIsSaveNameOpen] = useState(false);
+    const [newFilterName, setNewFilterName] = useState("");
+    const [saveTargetAction, setSaveTargetAction] = useState<"SAVE" | "SAVE_AS" | "EXECUTE">("SAVE");
+
     const router = useRouter();
     const searchParams = useSearchParams();
+
+    // 마운트 완료 체크 (하이드레이션 오류 방지용)
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
     // URL 파라미터를 통해 필터를 자동으로 로드합니다.
     useEffect(() => {
@@ -287,49 +299,41 @@ export function JQLBuilder({ users, savedFilters }: JQLBuilderProps) {
     };
 
     const handleSave = async () => {
-        let filterName = title;
-
-        // "새 필터" 이거나 기존 필터 목록에 없는 경우 이름을 묻습니다.
         if (title === "새 필터") {
-            const promptedName = prompt("저장할 필터의 이름을 입력하세요:", "");
-            if (!promptedName) return;
-            filterName = promptedName;
+            setSaveTargetAction("SAVE");
+            setNewFilterName("");
+            setIsSaveNameOpen(true);
         } else {
             if (!confirm(`'${title}' 필터의 변경사항을 저장하시겠습니까?`)) return;
+            await performSave(title);
         }
-
-        const existingFilter = savedFilters.find(f => f.title === filterName);
-
-        const filter: Filter = {
-            id: existingFilter?.id,
-            title: filterName,
-            jql_query: generatedJQL,
-            config_json: JSON.stringify({ conditions })
-        };
-        await saveFilter(filter);
-        alert("필터가 저장되었습니다.");
-        setTitle(filterName);
-        router.refresh();
     };
 
-    const handleSaveAs = async () => {
-        const filterName = prompt("다른 이름으로 저장할 필터의 이름을 입력하세요:", title + "_복사");
-        if (!filterName) return;
+    const performSave = async (filterName: string) => {
+        try {
+            const existingFilter = savedFilters.find(f => f.title === filterName);
 
-        if (savedFilters.some(f => f.title === filterName)) {
-            alert("동일한 이름의 필터가 이미 존재합니다. 다른 이름을 사용해 주세요.");
-            return;
+            const filter: Filter = {
+                id: existingFilter?.id,
+                title: filterName,
+                jql_query: generatedJQL,
+                config_json: JSON.stringify({ conditions })
+            };
+            await saveFilter(filter);
+            alert("필터가 저장되었습니다.");
+            setTitle(filterName);
+            setIsSaveNameOpen(false);
+            router.refresh();
+        } catch (e: any) {
+            console.error(e);
+            alert(`저장 중 오류가 발생했습니다: ${e.message}`);
         }
+    };
 
-        const filter: Filter = {
-            title: filterName,
-            jql_query: generatedJQL,
-            config_json: JSON.stringify({ conditions })
-        };
-        await saveFilter(filter);
-        alert("새 필터로 저장되었습니다.");
-        setTitle(filterName);
-        router.refresh();
+    const handleSaveAs = () => {
+        setSaveTargetAction("SAVE_AS");
+        setNewFilterName(title + "_복사");
+        setIsSaveNameOpen(true);
     };
 
     const handleExecute = async () => {
@@ -338,106 +342,123 @@ export function JQLBuilder({ users, savedFilters }: JQLBuilderProps) {
             return;
         }
 
-        const shouldSave = confirm("데이터 수집을 시작하기 전에 현재 필터 설정을 저장하시겠습니까?\n(저장하지 않으면 나중에 이 설정을 다시 불러올 수 없습니다)");
-
+        const shouldSave = confirm("수집 시작 전 현재 필터를 저장하시겠습니까?");
         if (shouldSave) {
-            const filterName = prompt("저장할 필터의 이름을 입력하세요:", title);
-            if (filterName) {
-                if (savedFilters.some(f => f.title === filterName)) {
-                    alert("동일한 이름의 필터가 이미 존재합니다. 다른 이름을 사용해 주세요.");
-                    return;
-                }
-                const filter: Filter = {
-                    title: filterName,
-                    jql_query: generatedJQL,
-                    config_json: JSON.stringify({ conditions })
-                };
-                await saveFilter(filter);
-                setTitle(filterName);
-                router.refresh();
-                alert("필터가 저장되었습니다. 수집을 시작합니다.");
-            } else {
-                alert("저장이 취소되었습니다. 수집을 중단합니다.");
+            if (title === "새 필터") {
+                setSaveTargetAction("EXECUTE");
+                setNewFilterName("");
+                setIsSaveNameOpen(true);
                 return;
             }
-        } else {
-            if (!confirm("저장하지 않고 수집을 시작하시겠습니까?")) {
-                return;
-            }
+            await performSave(title);
         }
 
-        await triggerCollection(generatedJQL, title, { conditions });
-        setIsMonitorOpen(true);
-        setCollectionStatus((prev: CollectionStatus | null) => prev ? { ...prev, status: "RUNNING" } as CollectionStatus : null);
+        try {
+            await triggerCollection(generatedJQL, title, { conditions });
+            setIsMonitorOpen(true);
+            setCollectionStatus((prev: CollectionStatus | null) => prev ? { ...prev, status: "RUNNING" } as CollectionStatus : null);
+        } catch (e: any) {
+            alert(`수집 시작 오류: ${e.message}`);
+        }
+    };
+
+    const onSaveNameSubmit = async () => {
+        if (!newFilterName.trim()) {
+            alert("이름을 입력해주세요.");
+            return;
+        }
+
+        if (savedFilters.some(f => f.title === newFilterName && title === "새 필터")) {
+            alert("동일한 이름의 필터가 이미 존재합니다.");
+            return;
+        }
+
+        if (saveTargetAction === "EXECUTE") {
+            await performSave(newFilterName);
+            await triggerCollection(generatedJQL, newFilterName, { conditions });
+            setIsMonitorOpen(true);
+            setCollectionStatus((prev: CollectionStatus | null) => prev ? { ...prev, status: "RUNNING" } as CollectionStatus : null);
+        } else {
+            await performSave(newFilterName);
+        }
     };
 
     const handleImportJQL = () => {
         if (!importText) return;
 
         try {
-            // JQL 파싱 엔진 (AND로 구분된 조건 분해)
-            const andParts = importText.split(/\s+AND\s+/i);
+            // JQL 파싱 엔진 고도화
+            // 1. 단순 AND 분리가 아닌, 토큰화를 통한 연산자/조건 분석
+            // 정규식: (필드) (연산자) (값) (논리연산자)
+            // 우선은 AND/OR로 크게 나누어 처리하는 방식을 유지하되, 각 파트의 논리 연산자를 보존
+
+            // JQL을 논리 연산자(AND, OR) 기준으로 분리하되 연산자도 포함하여 캡처
+            const tokens = importText.split(/\s+(AND|OR)\s+/i);
             const newConditions: ExtendedCondition[] = [];
 
-            andParts.forEach(part => {
-                const trimmed = part.trim();
-                if (!trimmed) return;
+            let currentLogic: "AND" | "OR" = "AND";
 
-                // 필드, 연산자, 값을 정규식으로 추출
-                const match = trimmed.match(/^([a-zA-Z]+)\s*(=|!=|>=|<=|>|<|~|!~|in|not\s+in)\s*(.+)$/i);
+            for (let i = 0; i < tokens.length; i++) {
+                const token = tokens[i].trim();
+                if (!token) continue;
+
+                if (token.toUpperCase() === "AND" || token.toUpperCase() === "OR") {
+                    currentLogic = token.toUpperCase() as "AND" | "OR";
+                    // 이전 조건의 logic을 업데이트 (i-1이 조건일 것이므로)
+                    if (newConditions.length > 0) {
+                        newConditions[newConditions.length - 1].logic = currentLogic;
+                    }
+                    continue;
+                }
+
+                // 조건 파싱: field operator value
+                const match = token.match(/^([a-zA-Z0-9.]+)\s*(=|!=|>=|<=|>|<|~|!~|in|not\s+in)\s*(.+)$/i);
+
                 if (match) {
-                    let field = match[1].trim();
+                    const field = match[1].trim();
                     const operator = match[2].trim().toLowerCase();
-                    let valueStr = match[3].trim();
+                    const valueStr = match[3].trim();
 
                     let value: any = valueStr;
-                    // 괄호 묶음 (IN 절 등) 처리
+                    // 괄호 및 따옴표 처리
                     if (valueStr.startsWith("(") && valueStr.endsWith(")")) {
                         value = valueStr.slice(1, -1).split(",").map(v => v.trim().replace(/^['"]|['"]$/g, ""));
                     } else {
-                        // 따옴표 제거
                         value = valueStr.replace(/^['"]|['"]$/g, "");
                     }
 
-                    // 지원하지 않는 필드인 경우 custom으로 처리
                     const isSupported = FIELD_OPTIONS.some(opt => opt.value === field);
 
                     newConditions.push({
                         id: Math.random().toString(),
                         field: (isSupported ? field : "custom") as any,
-                        operator: (isSupported ? operator : "none") as any,
-                        value: isSupported ? value : trimmed, // 수동 입력은 원문 그대로
-                        logic: "AND"
+                        operator: (isSupported ? (operator === "not in" ? "not in" : operator) : "none") as any,
+                        value: isSupported ? value : token,
+                        logic: "AND" // 기본값, 다음 토큰에 의해 변경될 수 있음
                     });
                 } else {
-                    // 정규식에 매치되지 않는 복잡한 구문도 custom으로 처리
+                    // 파싱 실패 시 custom으로 삽입
                     newConditions.push({
                         id: Math.random().toString(),
                         field: "custom" as any,
                         operator: "none" as any,
-                        value: trimmed,
+                        value: token,
                         logic: "AND"
                     });
                 }
-            });
+            }
 
             if (newConditions.length > 0) {
                 setConditions(newConditions);
                 alert("JQL이 파싱되어 빌더에 적용되었습니다.");
                 setIsImportOpen(false);
+                setImportText("");
             } else {
-                throw new Error("Invalid JQL");
+                throw new Error("No valid conditions found");
             }
         } catch (e) {
-            setConditions([{
-                id: "manual-" + Math.random(),
-                field: "text" as any,
-                operator: "~" as any,
-                value: importText,
-                logic: "AND"
-            }]);
-            alert("JQL 자동 파싱에 실패하여 수동 텍스트 모드로 적용했습니다.");
-            setIsImportOpen(false);
+            console.error(e);
+            alert("JQL 파싱 중 오류가 발생했습니다. 구문을 확인해 주세요.");
         }
     };
 
@@ -462,60 +483,99 @@ export function JQLBuilder({ users, savedFilters }: JQLBuilderProps) {
                         )}
                     </div>
                     <div className="flex gap-2">
-                        <Dialog open={isLoadOpen} onOpenChange={setIsLoadOpen}>
-                            <DialogTrigger asChild>
-                                <Button variant="outline" size="sm" className="border-slate-700 bg-slate-800/50 hover:bg-slate-800 text-slate-300">
-                                    <FolderOpen className="w-4 h-4 mr-2 text-yellow-500" /> 필터 불러오기
-                                </Button>
-                            </DialogTrigger>
-                            <DialogContent className="bg-slate-900 border-slate-800 text-slate-100 max-w-md">
-                                <DialogHeader>
-                                    <DialogTitle className="flex items-center gap-2">
-                                        <FolderOpen className="w-5 h-5 text-yellow-500" />
-                                        저장된 필터 불러오기
-                                    </DialogTitle>
-                                </DialogHeader>
-
-                                <div className="relative mt-4">
-                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                                    <Input
-                                        placeholder="필터 이름으로 검색..."
-                                        className="bg-slate-800 border-slate-700 pl-10 h-10 text-sm"
-                                        value={filterSearch}
-                                        onChange={(e) => setFilterSearch(e.target.value)}
-                                    />
-                                </div>
-
-                                <div className="space-y-2 mt-4 max-h-[450px] overflow-y-auto custom-scrollbar pr-2">
-                                    {savedFilters.filter(f => f.title.toLowerCase().includes(filterSearch.toLowerCase())).length === 0 && (
-                                        <p className="text-center py-20 text-slate-500 text-sm">
-                                            {filterSearch ? "검색 결과가 없습니다." : "저장된 필터가 없습니다."}
-                                        </p>
-                                    )}
-                                    {savedFilters
-                                        .filter(f => f.title.toLowerCase().includes(filterSearch.toLowerCase()))
-                                        .map(f => (
-                                            <div key={f.id} className="flex items-center justify-between p-3 bg-slate-800/30 rounded-xl border border-slate-800/50 hover:bg-slate-800/60 hover:border-blue-500/30 transition-all group cursor-pointer" onClick={() => loadFilter(f)}>
-                                                <div className="flex-1 min-w-0 pr-4">
-                                                    <h4 className="font-medium text-slate-200 group-hover:text-blue-400 truncate text-sm">{f.title}</h4>
-                                                    <p className="text-[10px] text-slate-500 truncate font-mono mt-0.5 opacity-60">{f.jql_query}</p>
-                                                </div>
-                                                <ChevronDown className="w-4 h-4 text-slate-600 group-hover:text-blue-400 transform -rotate-90" />
+                        {mounted && (
+                            <>
+                                <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
+                                    <DialogTrigger asChild>
+                                        <Button variant="outline" size="sm" className="border-slate-700 bg-slate-800/50 hover:bg-slate-800 text-slate-300">
+                                            <Import className="w-4 h-4 mr-2 text-purple-400" /> 임포트
+                                        </Button>
+                                    </DialogTrigger>
+                                    <DialogContent className="bg-slate-900 border-slate-800 text-slate-100 max-w-lg">
+                                        <DialogHeader>
+                                            <DialogTitle className="flex items-center gap-2">
+                                                <Import className="w-5 h-5 text-purple-400" />
+                                                JQL 쿼리 임포트
+                                            </DialogTitle>
+                                        </DialogHeader>
+                                        <div className="space-y-4 pt-4">
+                                            <div className="space-y-2">
+                                                <Label className="text-xs text-slate-400">Jira에서 복사한 JQL을 붙여넣으세요.</Label>
+                                                <textarea
+                                                    value={importText}
+                                                    onChange={(e) => setImportText(e.target.value)}
+                                                    className="w-full h-32 bg-slate-800/50 border border-slate-700 rounded-xl p-3 text-xs font-mono text-blue-300 focus:outline-none focus:border-blue-500/50"
+                                                    placeholder="ex: project = 'MYPROJ' AND worklogAuthor in (user1) OR status = 'Done'"
+                                                />
                                             </div>
-                                        ))}
-                                </div>
-                            </DialogContent>
-                        </Dialog>
+                                            <div className="flex justify-end gap-2">
+                                                <Button variant="outline" size="sm" onClick={() => setIsImportOpen(false)} className="border-slate-800 text-slate-400">
+                                                    취소
+                                                </Button>
+                                                <Button size="sm" onClick={handleImportJQL} className="bg-purple-600 hover:bg-purple-500">
+                                                    파싱 및 적용
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    </DialogContent>
+                                </Dialog>
 
-                        <Button variant="outline" size="sm" onClick={handleSave} className="border-slate-700 hover:bg-slate-800 text-slate-300">
-                            <Save className="w-4 h-4 mr-1.5" /> 저장
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={handleSaveAs} className="border-slate-700 hover:bg-slate-800 text-slate-300">
-                            <CopyPlus className="w-4 h-4 mr-1.5" /> 다른 이름으로 저장
-                        </Button>
-                        <Button size="sm" onClick={handleExecute} className="bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-900/30">
-                            <Play className="w-4 h-4 mr-1.5" /> 수집 시작
-                        </Button>
+                                <Dialog open={isLoadOpen} onOpenChange={setIsLoadOpen}>
+                                    <DialogTrigger asChild>
+                                        <Button variant="outline" size="sm" className="border-slate-700 bg-slate-800/50 hover:bg-slate-800 text-slate-300">
+                                            <FolderOpen className="w-4 h-4 mr-2 text-yellow-500" /> 불러오기
+                                        </Button>
+                                    </DialogTrigger>
+                                    <DialogContent className="bg-slate-900 border-slate-800 text-slate-100 max-w-md">
+                                        <DialogHeader>
+                                            <DialogTitle className="flex items-center gap-2">
+                                                <FolderOpen className="w-5 h-5 text-yellow-500" />
+                                                저장된 필터 불러오기
+                                            </DialogTitle>
+                                        </DialogHeader>
+
+                                        <div className="relative mt-4">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                                            <Input
+                                                placeholder="필터 이름으로 검색..."
+                                                className="bg-slate-800 border-slate-700 pl-10 h-10 text-sm"
+                                                value={filterSearch}
+                                                onChange={(e) => setFilterSearch(e.target.value)}
+                                            />
+                                        </div>
+
+                                        <div className="space-y-2 mt-4 max-h-[450px] overflow-y-auto custom-scrollbar pr-2">
+                                            {savedFilters.filter(f => f.title.toLowerCase().includes(filterSearch.toLowerCase())).length === 0 && (
+                                                <p className="text-center py-20 text-slate-500 text-sm">
+                                                    {filterSearch ? "검색 결과가 없습니다." : "저장된 필터가 없습니다."}
+                                                </p>
+                                            )}
+                                            {savedFilters
+                                                .filter(f => f.title.toLowerCase().includes(filterSearch.toLowerCase()))
+                                                .map(f => (
+                                                    <div key={f.id} className="flex items-center justify-between p-3 bg-slate-800/30 rounded-xl border border-slate-800/50 hover:bg-slate-800/60 hover:border-blue-500/30 transition-all group cursor-pointer" onClick={() => loadFilter(f)}>
+                                                        <div className="flex-1 min-w-0 pr-4">
+                                                            <h4 className="font-medium text-slate-200 group-hover:text-blue-400 truncate text-sm">{f.title}</h4>
+                                                            <p className="text-[10px] text-slate-500 truncate font-mono mt-0.5 opacity-60">{f.jql_query}</p>
+                                                        </div>
+                                                        <ChevronDown className="w-4 h-4 text-slate-600 group-hover:text-blue-400 transform -rotate-90" />
+                                                    </div>
+                                                ))}
+                                        </div>
+                                    </DialogContent>
+                                </Dialog>
+
+                                <Button variant="outline" size="sm" onClick={handleSave} className="border-slate-700 hover:bg-slate-800 text-slate-300">
+                                    <Save className="w-4 h-4 mr-1.5" /> 저장
+                                </Button>
+                                <Button variant="outline" size="sm" onClick={handleSaveAs} className="border-slate-700 hover:bg-slate-800 text-slate-300">
+                                    <CopyPlus className="w-4 h-4 mr-1.5" /> 복사 저장
+                                </Button>
+                                <Button size="sm" onClick={handleExecute} className="bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-900/30">
+                                    <Play className="w-4 h-4 mr-1.5" /> 수집
+                                </Button>
+                            </>
+                        )}
                         {collectionStatus?.status === "RUNNING" && (
                             <Button size="sm" variant="ghost" className="animate-pulse text-blue-400 hover:text-blue-300" onClick={() => setIsMonitorOpen(true)}>
                                 <span className="w-2 h-2 bg-blue-500 rounded-full mr-2" /> 수집 중...
@@ -594,6 +654,38 @@ export function JQLBuilder({ users, savedFilters }: JQLBuilderProps) {
                     </DialogContent>
                 </Dialog>
                 <CardContent className="space-y-0 pt-6">
+                    {/* 이름 입력 다이얼로그 (커스텀 prompt 대체) */}
+                    <Dialog open={isSaveNameOpen} onOpenChange={setIsSaveNameOpen}>
+                        <DialogContent className="bg-slate-900 border-slate-800 text-slate-100 max-w-sm">
+                            <DialogHeader>
+                                <DialogTitle className="flex items-center gap-2">
+                                    <Save className="w-5 h-5 text-blue-400" />
+                                    필터 이름 입력
+                                </DialogTitle>
+                            </DialogHeader>
+                            <div className="space-y-4 pt-4">
+                                <div className="space-y-2">
+                                    <Label className="text-xs text-slate-400">저장할 필터의 이름을 입력하세요.</Label>
+                                    <Input
+                                        value={newFilterName}
+                                        onChange={(e) => setNewFilterName(e.target.value)}
+                                        onKeyDown={(e) => e.key === "Enter" && onSaveNameSubmit()}
+                                        className="bg-slate-800 border-slate-700 h-10 text-sm"
+                                        autoFocus
+                                    />
+                                </div>
+                                <div className="flex justify-end gap-2">
+                                    <Button variant="outline" size="sm" onClick={() => setIsSaveNameOpen(false)} className="border-slate-800 text-slate-400">
+                                        취소
+                                    </Button>
+                                    <Button size="sm" onClick={onSaveNameSubmit} className="bg-blue-600 hover:bg-blue-500">
+                                        확인
+                                    </Button>
+                                </div>
+                            </div>
+                        </DialogContent>
+                    </Dialog>
+
                     <div className="space-y-4">
                         {conditions.map((condition, idx) => (
                             <div key={condition.id} className="relative space-y-4">
