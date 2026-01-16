@@ -45,26 +45,38 @@ export function FilterManagement({ initialFilters }: FilterManagementProps) {
     );
 
     const handleRename = async (filter: Filter) => {
-        if (!editTitle || editTitle === filter.title) {
+        if (!editTitle || editTitle.trim() === filter.title) {
             setEditingId(null);
             return;
         }
 
+        const trimmedTitle = editTitle.trim();
+
         // 중복 이름 체크 (관리 페이지에서도 수행)
-        if (initialFilters.some(f => f.title === editTitle && f.id !== filter.id)) {
+        if (initialFilters.some(f => f.title === trimmedTitle && f.id !== filter.id)) {
             alert("이미 동일한 이름의 필터가 존재합니다.");
             return;
         }
 
-        await saveFilter({ ...filter, title: editTitle });
-        setEditingId(null);
-        router.refresh();
+        try {
+            await saveFilter({ ...filter, title: trimmedTitle });
+            setEditingId(null);
+            router.refresh();
+        } catch (error) {
+            console.error("Rename failed:", error);
+            alert("필터 이름 수정에 실패했습니다.");
+        }
     };
 
     const handleDelete = async (filter: Filter) => {
         if (confirm(`'${filter.title}' 필터를 영구적으로 삭제하시겠습니까?`)) {
-            await deleteFilter(filter.id!);
-            router.refresh();
+            try {
+                await deleteFilter(filter.id!);
+                router.refresh();
+            } catch (error) {
+                console.error("Delete failed:", error);
+                alert("필터 삭제에 실패했습니다.");
+            }
         }
     };
 
@@ -144,14 +156,23 @@ export function FilterManagement({ initialFilters }: FilterManagementProps) {
                                                         <Edit3 className="w-3.5 h-3.5 text-slate-500 hover:text-blue-400" />
                                                     </Button>
                                                 </div>
-                                                <div className="flex items-center gap-4 text-[11px] text-slate-500">
+                                                <div className="flex items-start gap-4 text-[11px] text-slate-500">
                                                     <span
-                                                        className="flex items-center gap-1 font-mono text-blue-400/70 truncate max-w-[400px] cursor-pointer hover:text-blue-300"
-                                                        onClick={() => setSelectedFilter(filter)}
+                                                        className="flex-1 font-mono text-blue-400/70 cursor-pointer hover:text-blue-300 break-all leading-relaxed overflow-hidden text-ellipsis"
+                                                        style={{
+                                                            display: '-webkit-box',
+                                                            WebkitLineClamp: 2,
+                                                            WebkitBoxOrient: 'vertical',
+                                                        }}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setSelectedFilter(filter);
+                                                        }}
+                                                        title={filter.jql_query}
                                                     >
                                                         {filter.jql_query}
                                                     </span>
-                                                    <span className="flex items-center gap-1 shrink-0 ml-auto opacity-60">
+                                                    <span className="flex items-center gap-1 shrink-0 ml-auto opacity-60 pt-0.5">
                                                         <Calendar className="w-3 h-3" />
                                                         {filter.created_at ? format(new Date(filter.created_at), "yyyy-MM-dd HH:mm") : "-"}
                                                     </span>
@@ -166,7 +187,10 @@ export function FilterManagement({ initialFilters }: FilterManagementProps) {
                                             variant="ghost"
                                             className="h-10 w-10 text-slate-500 hover:text-blue-400 hover:bg-blue-400/10 rounded-xl"
                                             title="빌더에서 열기"
-                                            onClick={() => router.push(`/builder?loadId=${filter.id}`)}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                router.push(`/builder?loadId=${filter.id}`);
+                                            }}
                                         >
                                             <ExternalLink className="w-5 h-5" />
                                         </Button>
@@ -174,7 +198,10 @@ export function FilterManagement({ initialFilters }: FilterManagementProps) {
                                             size="icon"
                                             variant="ghost"
                                             className="h-10 w-10 text-slate-500 hover:text-red-400 hover:bg-red-400/10 rounded-xl"
-                                            onClick={() => handleDelete(filter)}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleDelete(filter);
+                                            }}
                                         >
                                             <Trash2 className="w-5 h-5" />
                                         </Button>

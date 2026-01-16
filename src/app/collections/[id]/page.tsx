@@ -111,7 +111,7 @@ export default async function CollectionDetailPage({
 
             {/* 상세 테이블 */}
             <section className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-200">
-                <WorklogTable worklogs={worklogs} />
+                <WorklogTable worklogs={worklogs} stats={stats} />
             </section>
         </main>
     );

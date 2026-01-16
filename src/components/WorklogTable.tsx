@@ -20,9 +20,10 @@ import { Button } from "./ui/button";
 
 interface WorklogTableProps {
     worklogs: any[];
+    stats?: any;
 }
 
-export function WorklogTable({ worklogs }: WorklogTableProps) {
+export function WorklogTable({ worklogs, stats }: WorklogTableProps) {
     const [searchTerm, setSearchTerm] = useState("");
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
@@ -121,7 +122,7 @@ export function WorklogTable({ worklogs }: WorklogTableProps) {
                     )}
 
                     <div className="h-6 w-px bg-slate-800 mx-1" />
-                    <ExcelExportButton data={filteredWorklogs} fileName="JiraAnal_Results" />
+                    <ExcelExportButton data={filteredWorklogs} fileName="JiraAnal_Results" stats={stats} />
                 </div>
             </CardHeader>
             <CardContent className="p-0">

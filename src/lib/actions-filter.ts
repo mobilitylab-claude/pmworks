@@ -50,14 +50,17 @@ export async function getFilters(): Promise<Filter[]> {
 export async function saveFilter(filter: Filter) {
     await executeRemoteCommand('save_filter', filter);
     revalidatePath("/builder");
+    revalidatePath("/filters");
 }
 
 export async function deleteFilter(id: number) {
     await executeRemoteCommand('delete_filter', { id });
     revalidatePath("/builder");
+    revalidatePath("/filters");
 }
 
 export async function triggerCollection(jql: string, filterTitle: string = "이름 없는 필터", config?: any) {
     await executeRemoteCommand('trigger_collection', { jql, filter_title: filterTitle, config });
     revalidatePath("/builder");
+    revalidatePath("/filters");
 }
