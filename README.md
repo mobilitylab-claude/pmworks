@@ -1,50 +1,60 @@
 # JiraAnal Web Dashboard
 
-이 프로젝트는 리눅스 보안 환경의 Jira 데이터를 수집하여 윈도우 로컬 환경에서 시각화하는 하이브리드 대시보드 도구입니다.
+이 프로젝트는 Jira 데이터를 수집하고 시각화하여 작업을 분석하는 도구입니다. 리눅스 환경의 Jira 수집기(Python)와 윈도우 환경의 대시보드(Next.js)가 유기적으로 연동되는 하이브리드 아키텍처를 가집니다.
 
-## 🏗️ 시스템 아키텍처
+## 🏗️ 시스템 아키텍처 (Hybrid RPC)
 
 ```mermaid
-graph LR
-    subgraph "Linux PC (Data Source)"
-        A[Jira Collector - Python] --> B[(Shared DB - Z: Drive)]
+graph TD
+    subgraph "Windows Dashboard (Frontend)"
+        A[Next.js Web App] --> B[Visual JQL Builder]
+        A --> C[Filter Management]
+        A --> D[Excel Export Tool]
     end
-    subgraph "Windows PC (Local Development)"
-        C[Next.js Dashboard - D: Drive] --> B
+
+    subgraph "Samba Shared Data (Bridge)"
+        E[(jira_status.db)]
+        F[(jira_data_v2.db)]
     end
+
+    subgraph "Linux Collector (Backend)"
+        G[Python Flask Server] --> H[Jira API]
+        G --> E
+        G --> F
+    end
+
+    A -- "RPC Command (Port 5001)" --> G
+    A -- "Read Only" --> E
+    A -- "Read Only" --> F
 ```
 
-## 📂 프로젝트 구조 및 관리 절차
+## 🌟 주요 기능
 
-소스 코드는 보존과 성능을 위해 분리하여 관리합니다.
-
-1. **소스 관리 (D: Drive)**: 
-   - 위치: `D:\works\JiraAnal_Web`
-   - 역할: 대시보드 UI 개발, Git 형상 관리 (`https://github.com/mobilitylab-claude/pmworks.git`).
-   - 장점: 로컬 드라이브를 사용하므로 `npm install` 및 빌드 속도가 매우 빠르고 안정적입니다.
-
-2. **데이터 공유 (Samba Z: Drive)**:
-   - 위치: `Z:\workspace\webApps\JiraAnal_New\data\jira_data.db`
-   - 역할: 리눅스 수집기(Python)가 작성한 데이터를 윈도우 웹 앱이 읽어오는 브리지 역할.
+1. **지능형 JQL 필터 빌더**: UI 기반으로 복잡한 JQL 조건을 생성하고, 필터별로 수집 설정을 관리합니다.
+2. **필터 관리소**: 저장된 필터의 수정, 삭제, 상세 정보 확인 및 빌더로의 즉시 연동을 지원합니다.
+3. **수집 이력 및 통계**: 수집된 회차별로 참여 인원, 투입 공수(M/M), 이슈 비중 등을 시각화합니다.
+4. **고급 엑셀 내보내기**: 상세 내역뿐만 아니라 개요, 작업자별 통계, 월별 추이 등을 포함한 **멀티 시트 엑셀** 다운로드를 지원하며, 숫자 데이터 타입을 보존하여 즉각적인 분석이 가능합니다.
 
 ## 🚀 운영 가이드
 
-### 1단계: 리눅스에서 데이터 업데이트
-워크로그 최신화가 필요할 때 리눅스 서버에서 수집 스크립트를 실행합니다.
+### 1단계: 서버 구동 (Linux/Samba 환경)
+리눅스 서버에서 RPC 서버(`server.py`)가 실행 중이어야 웹 대시보드에서 수집 명령을 내릴 수 있습니다.
 ```bash
-cd z:/workspace/webApps/JiraAnal_New
-./run_collector.sh
+# 리눅스 터미널
+cd z:/workspace/webApps/JiraAnal_New/collector
+python3 server.py
 ```
 
-### 2단계: 윈도우에서 대시보드 실행
-로컬(D: 드라이브) 폴더에서 개발 서버를 구동합니다.
+### 2단계: 대시보드 실행 (Windows 환경)
+로컬 폴더에서 개발 서버를 구동합니다.
 ```powershell
 cd D:\works\JiraAnal_Web
 npm run dev
 ```
 접속 주소: [http://localhost:3000](http://localhost:3000)
 
-## 🛠️ 개발 시 주의사항
-- **DB 경로**: `src/lib/db.ts` 파일에서 `DB_PATH`는 반드시 Z: 드라이브를 바라보도록 유지해야 합니다.
-- **Git Push**: 코드 수정 후에는 로컬(D:)에서 Git 명령어를 통해 커밋 및 푸시를 진행하십시오.
-- **의존성 설치**: 새로운 패키지를 추가할 때는 네트워크 드라이브(Z:)가 아닌 로컬(D:) 터미널에서 `npm install`을 실행하십시오.
+## 🛠️ 개발 및 관리 수칙
+
+- **형상 관리**: `D:\works\JiraAnal_Web`에서 로컬 작업을 진행하며, 수정 완료 후 `Git Push`를 통해 형상을 보존합니다.
+- **데이터 실시간성**: Samba 환경의 특성을 고려하여 `getDb()` 호출 시 캐시를 제거하고 매번 최신 데이터를 읽어오도록 구현되어 있습니다.
+- **의존성**: 새로운 UI 컴포넌트 추가 시 `Shadcn/UI` 프레임워크를 활용합니다.
