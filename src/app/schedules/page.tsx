@@ -17,6 +17,7 @@ import { format } from "date-fns";
 import { ko } from "date-fns/locale";
 import {
     getSchedules,
+    deleteSchedule,
     Schedule
 } from "@/lib/actions-status";
 import {
@@ -67,6 +68,20 @@ export default function SchedulesPage() {
     const handleOpenEditDialog = (id: number) => {
         setSelectedScheduleId(id);
         setIsDialogOpen(true);
+    };
+
+    const handleDeleteDirect = async (id: number) => {
+        if (!confirm("이 자동 수집 일정을 삭제하시겠습니까?")) return;
+
+        try {
+            setLoading(true);
+            await deleteSchedule(id);
+            alert("스케줄이 삭제되었습니다.");
+            fetchData();
+        } catch (e: any) {
+            alert(`삭제 실패: ${e.message}`);
+            setLoading(false);
+        }
     };
 
     return (
@@ -160,6 +175,16 @@ export default function SchedulesPage() {
                                     >
                                         <Settings2 className="w-4 h-4 mr-2" />
                                         설정 변경
+                                    </Button>
+
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-9 w-9 text-slate-500 hover:text-red-400 hover:bg-red-400/10"
+                                        onClick={() => handleDeleteDirect(schedule.id!)}
+                                        title="삭제"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
                                     </Button>
 
                                     <div className="w-px h-8 bg-slate-800 mx-1 hidden md:block" />
