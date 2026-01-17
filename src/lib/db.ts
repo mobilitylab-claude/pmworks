@@ -3,45 +3,29 @@ import path from 'path';
 import fs from 'fs';
 
 // Samba(Z: 드라이브) 데이터베이스 경로 분리
-const BASE_PATH = 'Z:/workspace/webApps/JiraAnal_New/data';
-const STATUS_DB_PATH = path.join(BASE_PATH, 'jira_status.db');
-const DATA_DB_PATH = path.join(BASE_PATH, 'jira_data_v2.db');
-
-let statusDbInstance: Database.Database | null = null;
-let dataDbInstance: Database.Database | null = null;
-
+// Samba(Z: 드라이브) 데이터베이스 경로 분리
 export type DbType = 'status' | 'data';
+const STATUS_DB_PATH = 'Z:/workspace/webApps/JiraAnal_New/data/jira_status.db';
+const DATA_DB_PATH = 'Z:/workspace/webApps/JiraAnal_New/data/jira_data_v2.db';
 
 export function getDb(type: DbType = 'data', readonly: boolean = false): Database.Database {
-    // [변경] 모든 DB는 실시간성 확보를 위해 캐싱하지 않고 매번 새로 연결
-
     const dbPath = type === 'status' ? STATUS_DB_PATH : DATA_DB_PATH;
+    console.log(`[getDb] Opening ${type} DB at ${dbPath} (readonly: ${readonly})`);
 
     let isNewDb = false;
-    try {
-        const dbDir = path.dirname(dbPath);
-        if (!fs.existsSync(dbDir)) {
-            fs.mkdirSync(dbDir, { recursive: true });
-        }
-
-        if (!fs.existsSync(dbPath) || fs.statSync(dbPath).size === 0) {
-            console.log(`Initializing empty database file: ${dbPath}`);
-            isNewDb = true;
-            if (!fs.existsSync(dbPath)) {
-                fs.closeSync(fs.openSync(dbPath, 'w'));
-            }
-        }
-    } catch (fsError) {
-        console.error("FileSystem error during DB check:", fsError);
+    // 경로 체크 간소화
+    if (!fs.existsSync(dbPath)) {
+        isNewDb = true;
+        console.log(`[getDb] DB file not found, will attempt to initialize: ${dbPath}`);
     }
 
     let db: Database.Database;
     try {
-        // [수정] 새 DB인 경우 권한에 상관없이 초기 1회는 쓰기 가능 모드로 열어 테이블 생성장치 마련
         db = new Database(dbPath, {
             readonly: isNewDb ? false : readonly,
             timeout: 20000
         });
+        console.log(`[getDb] Successfully opened ${type} DB`);
 
         // 최적화 PRAGMA (Samba 공유 시 필수)
         try {
@@ -141,6 +125,23 @@ function initSchema(db: Database.Database, type: DbType) {
                 issue_count INTEGER DEFAULT 0,
                 worklog_count INTEGER DEFAULT 0
             );
+            CREATE TABLE IF NOT EXISTS schedules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filter_id INTEGER,
+                frequency TEXT NOT NULL,
+                target_time TEXT,
+                target_date TEXT,
+                is_active INTEGER DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                message TEXT,
+                is_read INTEGER DEFAULT 0,
+                collection_id INTEGER,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
             INSERT OR IGNORE INTO active_config (key, value) VALUES ('status', 'IDLE');
             INSERT OR IGNORE INTO active_config (key, value) VALUES ('progress_current', '0');
             INSERT OR IGNORE INTO active_config (key, value) VALUES ('progress_total', '0');
@@ -172,16 +173,16 @@ function initSchema(db: Database.Database, type: DbType) {
 export function getDetailedWorklogs(collectionId?: number) {
     const db = getDb('data', true); // 읽기 전용
     let targetId = collectionId;
-    if (!targetId) {
-        // collections는 status db에 있으므로 크로스 쿼리가 필요한데, 
-        // 간단하게 status db에서 id를 먼저 조회한 후 data db 쿼리에 넣음
-        const statusDb = getDb('status', true);
-        const lastCollection = statusDb.prepare("SELECT id FROM collections WHERE status = 'DONE' ORDER BY id DESC LIMIT 1").get() as { id: number } | undefined;
-        if (!lastCollection) return [];
-        targetId = lastCollection.id;
-    }
+    let statusDb: Database.Database | null = null;
 
     try {
+        if (!targetId) {
+            statusDb = getDb('status', true);
+            const lastCollection = statusDb.prepare("SELECT id FROM collections WHERE status = 'DONE' ORDER BY id DESC LIMIT 1").get() as { id: number } | undefined;
+            if (!lastCollection) return [];
+            targetId = lastCollection.id;
+        }
+
         return db.prepare(`
             SELECT w.*, i.summary as issue_summary
             FROM worklogs w
@@ -192,6 +193,7 @@ export function getDetailedWorklogs(collectionId?: number) {
         `).all(targetId) as any[];
     } finally {
         db.close();
+        if (statusDb) statusDb.close();
     }
 }
 

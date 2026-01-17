@@ -38,3 +38,4 @@ node_modules_backup_*
 *.xlsx
 .DS_Store
 요구사항.txt
+.next_old_*/

@@ -31,7 +31,17 @@ async function executeRemoteCommand(command: string, data: any) {
 
 export async function getUsers(): Promise<User[]> {
     const db = getDb('data', true);
-    return db.prepare("SELECT * FROM users ORDER BY name ASC").all() as User[];
+    try {
+        const users = db.prepare("SELECT * FROM users ORDER BY name ASC").all() as User[];
+        return users.map(u => ({
+            dt_account: String(u.dt_account || ''),
+            name: String(u.name || ''),
+            email: String(u.email || ''),
+            part: String(u.part || '')
+        }));
+    } finally {
+        db.close();
+    }
 }
 
 export async function addUser(user: User) {

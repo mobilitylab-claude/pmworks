@@ -23,7 +23,7 @@ export type Filter = {
     created_at?: string;
 }
 
-const RPC_URL = "http://192.168.105.10:5001/api/command";
+const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "http://192.168.105.10:5001/api/command";
 
 async function executeRemoteCommand(command: string, data: any) {
     try {
@@ -43,8 +43,41 @@ async function executeRemoteCommand(command: string, data: any) {
 }
 
 export async function getFilters(): Promise<Filter[]> {
-    const db = getDb('status', true);
-    return db.prepare("SELECT * FROM filters ORDER BY created_at DESC").all() as Filter[];
+    // 1. RPC 시도
+    try {
+        const res = await executeRemoteCommand('get_filters', {});
+        if (Array.isArray(res)) {
+            return res.filter(f => f && typeof f === 'object').map(f => ({
+                id: Number(f.id),
+                title: String(f.title || ''),
+                jql_query: String(f.jql_query || ''),
+                config_json: String(f.config_json || '{}'),
+                created_at: String(f.created_at || '')
+            }));
+        }
+    } catch (e) {
+        console.warn("RPC fetch filters failed, falling back to local DB:", e);
+    }
+
+    // 2. 로컬 DB 폴백 (Samba 연결이 살아있는 경우)
+    try {
+        const db = getDb('status', true);
+        try {
+            const filters = db.prepare("SELECT * FROM filters ORDER BY created_at DESC").all() as any[];
+            return filters.map(f => ({
+                id: Number(f.id),
+                title: String(f.title || ''),
+                jql_query: String(f.jql_query || ''),
+                config_json: String(f.config_json || '{}'),
+                created_at: String(f.created_at || '')
+            }));
+        } finally {
+            db.close();
+        }
+    } catch (e) {
+        console.error("Local DB fetch filters failed as well:", e);
+        return [];
+    }
 }
 
 export async function saveFilter(filter: Filter) {

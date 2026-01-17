@@ -17,8 +17,10 @@ import {
     Terminal,
     ChevronRight,
     SearchX,
-    ExternalLink
+    ExternalLink,
+    CalendarDays
 } from "lucide-react";
+import { ScheduleDialog } from "@/components/ScheduleDialog";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import {
@@ -37,11 +39,16 @@ export function FilterManagement({ initialFilters }: FilterManagementProps) {
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editTitle, setEditTitle] = useState("");
     const [selectedFilter, setSelectedFilter] = useState<Filter | null>(null);
+    const [schedulingFilter, setSchedulingFilter] = useState<Filter | null>(null);
     const router = useRouter();
 
-    const filtered = initialFilters.filter(f =>
-        f.title.toLowerCase().includes(search.toLowerCase()) ||
-        f.jql_query.toLowerCase().includes(search.toLowerCase())
+    const safeFilters = Array.isArray(initialFilters) ? initialFilters : [];
+
+    const filtered = safeFilters.filter(f =>
+        f && f.title && (
+            f.title.toLowerCase().includes(search.toLowerCase()) ||
+            (f.jql_query && f.jql_query.toLowerCase().includes(search.toLowerCase()))
+        )
     );
 
     const handleRename = async (filter: Filter) => {
@@ -186,6 +193,18 @@ export function FilterManagement({ initialFilters }: FilterManagementProps) {
                                             size="icon"
                                             variant="ghost"
                                             className="h-10 w-10 text-slate-500 hover:text-blue-400 hover:bg-blue-400/10 rounded-xl"
+                                            title="스케줄 설정"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSchedulingFilter(filter);
+                                            }}
+                                        >
+                                            <CalendarDays className="w-5 h-5" />
+                                        </Button>
+                                        <Button
+                                            size="icon"
+                                            variant="ghost"
+                                            className="h-10 w-10 text-slate-500 hover:text-blue-400 hover:bg-blue-400/10 rounded-xl"
                                             title="빌더에서 열기"
                                             onClick={(e) => {
                                                 e.stopPropagation();
@@ -216,7 +235,7 @@ export function FilterManagement({ initialFilters }: FilterManagementProps) {
                 )}
             </div>
 
-            <Dialog open={!!selectedFilter} onOpenChange={(open) => !open && setSelectedFilter(null)}>
+            <Dialog open={!!selectedFilter} onOpenChange={(open: boolean) => !open && setSelectedFilter(null)}>
                 <DialogContent className="bg-slate-900 border-slate-800 text-slate-100 max-w-2xl">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2 text-blue-400">
@@ -247,6 +266,15 @@ export function FilterManagement({ initialFilters }: FilterManagementProps) {
                     </div>
                 </DialogContent>
             </Dialog>
+
+            {schedulingFilter && (
+                <ScheduleDialog
+                    filterId={schedulingFilter.id!}
+                    filterTitle={schedulingFilter.title}
+                    isOpen={!!schedulingFilter}
+                    onClose={() => setSchedulingFilter(null)}
+                />
+            )}
         </div>
     );
 }
