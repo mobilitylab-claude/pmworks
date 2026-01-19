@@ -190,7 +190,7 @@ export function Navigation() {
                         </Popover>
 
                         <div className="text-xs text-slate-500 bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
-                            v2.3.0 Stable
+                            v2.3.1 Stable
                         </div>
                     </div>
                 </div>
